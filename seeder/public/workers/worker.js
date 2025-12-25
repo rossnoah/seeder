@@ -78,4 +78,14 @@ function listener(e) {
             data: { colors: self.seeder.COLORS }
         });
     }
+    else if (e.data.kind == "GET_AREA_BIOMES") {
+        var { mcVersion, seed, startX, startY, widthX, widthY, dimension, yHeight } = e.data.data;
+        self.postMessage({
+            kind: "DONE_GET_AREA_BIOMES",
+            data: {
+                mcVersion, seed, startX, startY, widthX, widthY, dimension, yHeight,
+                biomes: self.seeder.getAreaBiomes(mcVersion, seed, startX, startY, widthX, widthY, dimension, yHeight)
+            }
+        });
+    }
 }

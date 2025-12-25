@@ -165,6 +165,21 @@ export class QueueManager {
         setTimeout(() => this.getColors(), 1);
     }
 
+    getAreaBiomes(mcVersion, seed, startX, startY, widthX, widthY, dimension, yHeight, callback) {
+        for (let worker of this.workers) {
+            if (!worker.busy) {
+                worker.busy = true;
+                worker.callback = callback;
+                worker.postMessage({
+                    kind: "GET_AREA_BIOMES",
+                    data: { mcVersion, seed, startX, startY, widthX, widthY, dimension, yHeight }
+                });
+                return;
+            }
+        }
+        setTimeout(() => this.getAreaBiomes(mcVersion, seed, startX, startY, widthX, widthY, dimension, yHeight, callback), 1);
+    }
+
     printStatus() {
         console.log("Total workers: " + this.workers.length + " -  Busy: " + this.workers.filter(w => w.busy).length);
     }
@@ -241,6 +256,11 @@ export class QueueManager {
         else if (e.data.kind === "DONE_GET_COLORS") {
             const data = e.data.data;
             this.COLORS = data.colors;
+            this._cleanWorker(worker);
+        }
+        else if (e.data.kind === "DONE_GET_AREA_BIOMES") {
+            const data = e.data.data;
+            worker.callback(data.biomes);
             this._cleanWorker(worker);
         }
         else if (e.data.kind === "SEED_UPDATE") {

@@ -51,6 +51,16 @@ class Seeder {
         return colors;
     }
 
+    // Get the raw biome IDs for an area
+    getAreaBiomes(mcVersion, seed, x, z, areaWidth, areaHeight, dimension, yHeight) {
+        seed = BigInt(seed);
+        const res = this.WASMgenerateArea(mcVersion, seed, x, z, areaWidth, areaHeight, dimension, yHeight);
+        const biomes = this.module.HEAP32.subarray(res >> 2, (res >> 2) + (areaWidth * areaHeight));
+        const biomeIds = Array.from(biomes);
+        this.WASMfreeMemory();
+        return biomeIds;
+    }
+
     findBiomes(mcVersion, biomes, x, z, widthX, widthZ, startingSeed, dimension, yHeight) {
         const input = new Uint8Array(new Int32Array(biomes).buffer)
         const result = this.WASMfindBiomes(mcVersion, input, biomes.length, x, z, widthX, widthZ, startingSeed, dimension, yHeight);

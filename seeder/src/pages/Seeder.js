@@ -50,6 +50,9 @@ export default function Seeder() {
     const [biomesToFind, setBiomesToFind] = useState(null);
     const [range, setRange] = useState(null);
 
+    const [biomesToBlacklist, setBiomesToBlacklist] = useState(null);
+    const [blacklistRange, setBlacklistRange] = useState(null);
+
     const [structureToFind, setStructureToFind] = useState(null);
     const [structuresToShow, setStructuresToShow] = useState([]);
 
@@ -203,8 +206,63 @@ export default function Seeder() {
         setFindingSeedStartTime(null);
     }
 
+    const validateSeedAgainstBlacklist = (seed, callback) => {
+        // If no blacklist is configured, seed is valid
+        if (!biomesToBlacklist || biomesToBlacklist.length === 0 || !blacklistRange || blacklistRange <= 0) {
+            callback(true);
+            return;
+        }
+
+        // Calculate the area to check based on blacklistRange
+        const checkRange = blacklistRange * 4; // Convert to blocks
+        const startX = -checkRange;
+        const startZ = -checkRange;
+        const width = checkRange * 2;
+        const height = checkRange * 2;
+
+        // Get biomes in the area
+        queueManager.getAreaBiomes(
+            mcVersion,
+            seed,
+            startX,
+            startZ,
+            width,
+            height,
+            dimension,
+            yHeight,
+            (biomes) => {
+                // Check if any blacklisted biome appears in the area
+                const hasBlacklistedBiome = biomes.some(biomeId => biomesToBlacklist.includes(biomeId));
+                callback(!hasBlacklistedBiome); // Valid if no blacklisted biome found
+            }
+        );
+    }
+
+    const findSeedBlacklistOnly = (seedToTest) => {
+        // For blacklist-only searches, we test seeds one by one
+        const testSeed = "" + seedToTest;
+
+        validateSeedAgainstBlacklist(testSeed, (isValid) => {
+            if (isValid) {
+                // Found a valid seed!
+                setSeed(testSeed);
+                setInputSeed(testSeed);
+                setLastFoundSeed(parseInt(testSeed));
+                setIsFindingSeed(false);
+                setFindingSeedStartTime(null);
+            } else {
+                // This seed failed, try the next one
+                setLastFoundSeed(seedToTest);
+                setTimeout(() => findSeedBlacklistOnly(seedToTest + 1), 0);
+            }
+        });
+    }
+
     const findSeed = () => {
-        if (range > 0) {
+        const hasWhitelist = range > 0 && (biomesToFind?.length > 0 || structureToFind);
+        const hasBlacklist = blacklistRange > 0 && biomesToBlacklist?.length > 0;
+
+        if (hasWhitelist || hasBlacklist) {
             setIsFindingSeed(true);
             setFindingSeedStartTime(new Date());
             setSeedFindingSpeed(0);
@@ -217,13 +275,41 @@ export default function Seeder() {
                 setSeedFindingSpeed(speed);
             }
 
+            // If only blacklist criteria (no whitelist), use blacklist-only search
+            if (!hasWhitelist && hasBlacklist) {
+                findSeedBlacklistOnly(lastFoundSeed + 1);
+                return;
+            }
+
+            // Otherwise, use whitelist search with optional blacklist validation
             const callback = (foundSeed) => {
                 foundSeed = "" + foundSeed;
-                setSeed(foundSeed);
-                setInputSeed(foundSeed);
-                setLastFoundSeed(parseInt(foundSeed));
-                setIsFindingSeed(false);
-                setFindingSeedStartTime(null);
+
+                // Validate against blacklist if configured
+                if (hasBlacklist) {
+                    validateSeedAgainstBlacklist(foundSeed, (isValid) => {
+                        if (isValid) {
+                            // Seed passes blacklist validation
+                            setSeed(foundSeed);
+                            setInputSeed(foundSeed);
+                            setLastFoundSeed(parseInt(foundSeed));
+                            setIsFindingSeed(false);
+                            setFindingSeedStartTime(null);
+                        } else {
+                            // Seed failed blacklist validation, continue searching
+                            setLastFoundSeed(parseInt(foundSeed));
+                            // Restart the search from the next seed
+                            setTimeout(() => findSeed(), 10);
+                        }
+                    });
+                } else {
+                    // No blacklist, accept the seed immediately
+                    setSeed(foundSeed);
+                    setInputSeed(foundSeed);
+                    setLastFoundSeed(parseInt(foundSeed));
+                    setIsFindingSeed(false);
+                    setFindingSeedStartTime(null);
+                }
             }
 
             if (biomesToFind?.length > 0 && structureToFind) {
@@ -293,6 +379,23 @@ export default function Seeder() {
                             setStructuresToShow([val?.value, ...structuresToShow]);
                         }
                     }} filterOption={createFilter(filterConfig)} placeholder="Select structures..." />
+                    <div className="margin-3">Select biomes you DON'T want (blacklist)</div>
+                    <Select options={BIOMES} isClearable={true} isMulti onChange={(val) => {
+                        setLastFoundSeed(0);
+                        setBiomesToBlacklist([...val?.map(x => x?.value)])
+                    }} placeholder="Select biomes to exclude..." />
+                    <div className="margin-3">Distance from (0, 0) where blacklisted biomes cannot be</div>
+                    <Select options={[
+                        { value: parseInt(100 / 4), label: "<100 blocks" },
+                        { value: parseInt(300 / 4), label: "<300 blocks" },
+                        { value: parseInt(500 / 4), label: "<500 blocks" },
+                        { value: parseInt(750 / 4), label: "<750 blocks" },
+                        { value: parseInt(1000 / 4), label: "<1k blocks" },
+                        { value: parseInt(2000 / 4), label: "<2k blocks" }
+                    ]} isClearable={true} onChange={(val) => {
+                        setLastFoundSeed(0);
+                        setBlacklistRange(val?.value);
+                    }} placeholder="Select blacklist range..." />
                     {!isAdvancedModeEnabled &&
                         <>
                             <div className="margin-3">Select the range from (0, 0)</div>
@@ -319,13 +422,18 @@ export default function Seeder() {
                         <input type="number" className="padding-3" value={lastFoundSeed ?? ''} onChange={(e) => e?.target?.value ? setLastFoundSeed(parseInt(e?.target?.value)) : undefined} />
                         <div className="margin-3">Range from (0, 0)</div>
                         <input type="number" className="padding-3" value={range ? range * 4 : ''} onChange={(e) => e?.target?.value ? setRange(e?.target?.value / 4) : setRange(null)} />
+                        <div className="margin-3">Blacklist range from (0, 0)</div>
+                        <input type="number" className="padding-3" value={blacklistRange ? blacklistRange * 4 : ''} onChange={(e) => e?.target?.value ? setBlacklistRange(e?.target?.value / 4) : setBlacklistRange(null)} />
                         <div className="margin-3">Biome height</div>
                         <input type="number" className="padding-3" value={yHeight ?? ''} onChange={(e) => e?.target?.value ? setYHeight(parseInt(e?.target?.value)) : setYHeight(null)} />
                     </div>
                     }
                 </div >
                 <div className="margin-3">
-                    <button className="full-button" onClick={() => findSeed()} disabled={isRandomSeedButtonDisabled || !(range > 0 && (biomesToFind?.length > 0 || structureToFind))}>
+                    <button className="full-button" onClick={() => findSeed()} disabled={isRandomSeedButtonDisabled || !(
+                        (range > 0 && (biomesToFind?.length > 0 || structureToFind)) ||
+                        (blacklistRange > 0 && biomesToBlacklist?.length > 0)
+                    )}>
                         {lastFoundSeed > 0 ? 'Find another' : 'Find'}
                     </button>
                 </div>
